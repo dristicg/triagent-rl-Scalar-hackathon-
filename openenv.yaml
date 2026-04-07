@@ -98,4 +98,4 @@ baseline_scores:
 
 dependencies:
   python: ">=3.9"
-  packages: [pyyaml>=6.0, gradio>=4.0, openai>=1.0]
+  packages: [pyyaml>=6.0, gradio>=4.0, openai>=1.0, huggingface_hub>=0.20.0,<1.0]
