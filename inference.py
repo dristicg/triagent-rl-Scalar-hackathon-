@@ -10,10 +10,16 @@ app = FastAPI()
 env = MedicalTriageEnv(task_id=int(os.getenv("TASK_ID", "1")))
 
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "TriageNet-RL API is running"}
+
+
 @app.post("/reset")
 async def reset():
-    obs = env.reset()
-    return obs.model_dump()
+    observation = env.reset()
+    # Grader expects a dictionary, not a Pydantic object
+    return observation.model_dump()
 
 
 @app.post("/step")
