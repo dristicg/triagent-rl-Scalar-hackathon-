@@ -443,6 +443,12 @@ def create_demo():
 
 if __name__ == "__main__":
     demo = create_demo()
+
+    # Prevent localhost health checks from being routed through proxies.
+    proxy_bypass = "localhost,127.0.0.1,0.0.0.0"
+    os.environ["NO_PROXY"] = proxy_bypass
+    os.environ["no_proxy"] = proxy_bypass
+
     demo.launch(
         server_name="0.0.0.0",
         server_port=int(os.environ.get("PORT", 7860)),
