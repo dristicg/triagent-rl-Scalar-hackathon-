@@ -3,6 +3,7 @@ import json
 import sys
 from typing import Optional
 
+from huggingface_hub import get_token
 from openai import OpenAI
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -12,7 +13,8 @@ from models import Action, VALID_ROUTING_ZONES
 # Environment variables (never hardcoded)
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
-HF_TOKEN = os.getenv("HF_TOKEN")
+# Prefer explicit env var in deployment, then fallback to local HF CLI token.
+HF_TOKEN = os.getenv("HF_TOKEN") or get_token()
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 # Constants
