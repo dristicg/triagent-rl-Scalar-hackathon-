@@ -441,22 +441,11 @@ def create_demo():
 
 if __name__ == "__main__":
     demo = create_demo()
-    launch_kwargs = {
-        "server_name": "0.0.0.0",
-        "server_port": 7860,
-        "show_error": True,
-    }
 
-    # Allow explicit override via env var in CI/remote environments.
-    if os.getenv("GRADIO_SHARE", "").lower() in {"1", "true", "yes"}:
-        launch_kwargs["share"] = True
-
-    try:
-        demo.launch(**launch_kwargs)
-    except ValueError as exc:
-        if "localhost is not accessible" in str(exc).lower() and not launch_kwargs.get("share"):
-            print("Localhost is not accessible. Retrying with share=True...")
-            launch_kwargs["share"] = True
-            demo.launch(**launch_kwargs)
-        else:
-            raise
+    # Force settings that work with Hugging Face Spaces.
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False,
+        show_error=True,
+    )

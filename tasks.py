@@ -6,7 +6,7 @@ Each task has a deterministic grader returning score 0.0–1.0.
 
 from __future__ import annotations
 import copy
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 from models import Patient, Vitals
 
 
@@ -193,20 +193,38 @@ def is_critical_miss(assigned_esi: int, true_esi: int) -> bool:
     return true_esi <= 2 and assigned_esi >= (true_esi + 2)
 
 
+def _normalize_requested_resources(requested: List[Any]) -> set[str]:
+    """Normalize mixed resource payloads into a set of resource name strings."""
+    normalized: set[str] = set()
+    for item in requested or []:
+        if isinstance(item, str):
+            normalized.add(item)
+            continue
+        if isinstance(item, dict):
+            # Accept common LLM payload shapes like {"resource": "ecg"}.
+            for key in ("resource", "name", "type", "id"):
+                value = item.get(key)
+                if isinstance(value, str) and value:
+                    normalized.add(value)
+                    break
+    return normalized
+
+
 def grade_resources(requested: List[str], true_esi: int) -> Tuple[float, str]:
     critical_resources = {"ecg","iv_access","blood_panel","ct_head","chest_xray"}
+    requested_set = _normalize_requested_resources(requested)
     if true_esi == 1:
         needed = {"iv_access","blood_panel","ecg"}
-        if needed.issubset(set(requested)):
+        if needed.issubset(requested_set):
             return 1.0, "✅ Appropriate resources for ESI 1"
-        overlap = len(needed & set(requested)) / len(needed)
+        overlap = len(needed & requested_set) / len(needed)
         return overlap * 0.8, "⚠️ Partial resources for critical patient"
     elif true_esi == 2:
-        if len(set(requested) & critical_resources) >= 2:
+        if len(requested_set & critical_resources) >= 2:
             return 0.8, "✅ Good resources for ESI 2"
         return 0.4, "⚠️ Insufficient resources for ESI 2"
     else:
-        if len(set(requested) & critical_resources) >= 3:
+        if len(requested_set & critical_resources) >= 3:
             return 0.5, "⚠️ Over-resourced low-acuity patient"
         return 1.0, "✅ Appropriate resource restraint"
 
