@@ -377,7 +377,9 @@ def create_demo():
     """Create the Gradio demo interface."""
     demo = TriageDemo()
     
-    with gr.Blocks(title="TriageNet-RL - Emergency Department Triage", theme=gr.themes.Base()) as interface:
+    with gr.Blocks(
+        title="🏥 Medical Triage OpenEnv",
+    ) as interface:
         gr.Markdown("# 🏥 TriageNet-RL - Emergency Department Triage Simulation")
         gr.Markdown("Interactive demo of AI-powered emergency department triage using the Emergency Severity Index (ESI) standard.")
         
@@ -441,11 +443,9 @@ def create_demo():
 
 if __name__ == "__main__":
     demo = create_demo()
-
-    # Force settings that work with Hugging Face Spaces.
     demo.launch(
         server_name="0.0.0.0",
         server_port=7860,
-        share=False,
         show_error=True,
+        share=False,
     )
