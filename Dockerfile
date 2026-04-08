@@ -1,21 +1,26 @@
 FROM python:3.11-slim
 
-RUN useradd -m -u 1000 user
-
 WORKDIR /app
 
-COPY requirements.txt .
+RUN apt-get update && apt-get install -y \
+    build-essential curl \
+    && rm -rf /var/lib/apt/lists/*
 
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chown -R user:user /app
-
-USER user
+RUN useradd -m -u 1000 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 7860
 
 ENV PYTHONUNBUFFERED=1
+ENV PORT=7860
 
-CMD ["uvicorn", "inference:app", "--host", "0.0.0.0", "--port", "7860"]
+HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:7860/health || exit 1
+
+CMD ["python", "app.py"]
