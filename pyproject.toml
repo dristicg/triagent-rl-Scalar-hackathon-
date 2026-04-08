@@ -9,14 +9,13 @@ description = "Medical ED Triage OpenEnv"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "gradio>=4.0,<5.0",
-    "huggingface_hub<0.26.0",
-    "fastapi>=0.100",
-    "uvicorn>=0.23",
-    "pydantic>=2.0",
-    "pyyaml>=6.0",
-    "openai>=1.0",
-    "numpy>=1.24",
+    "gradio",
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pyyaml",
+    "openai",
+    "numpy",
     "openenv-core>=0.2.0"
 ]
 
