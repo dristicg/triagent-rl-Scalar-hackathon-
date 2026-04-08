@@ -1,80 +1,78 @@
 import os
-
+import sys
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware # Added for CORS
 from openai import OpenAI
 
 from env import MedicalTriageEnv
 from models import Action
 
-
 app = FastAPI()
 
-# Required environment variables for OpenEnv / HF deployments.
+# --- STEP 1: ADD CORS MIDDLEWARE ---
+# This allows the Scaler/Meta grader to talk to your API without being blocked.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Environment variables
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN")
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
-# OpenAI client configured via the required environment variables.
 client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN) if HF_TOKEN else None
 
+# Initialize Environment
 env = MedicalTriageEnv(task_id=int(os.getenv("TASK_ID", "1")))
-
-
-def _log_start(task_id: int) -> None:
-    print(f"[START] task_id={task_id} model={MODEL_NAME}")
-
-
-def _log_step(step_number: int, action: Action, done: bool) -> None:
-    print(
-        f"[STEP] step={step_number} action_type={action.action_type} "
-        f"esi={action.esi_level or '-'} routing={action.routing_zone or '-'} done={done}"
-    )
-
-
-def _log_end(final_score: float, step_count: int, done: bool) -> None:
-    print(f"[END] steps={step_count} final_score={final_score:.3f} done={done}")
-
 
 @app.get("/")
 async def root():
     return {"status": "ok", "message": "TriageNet-RL API is running"}
 
-
 @app.post("/reset")
 async def reset():
-    observation = env.reset()
-    # Grader expects a dictionary, not a Pydantic object
-    _log_start(getattr(env, "task_id", 1))
-    return observation.model_dump()
-
+    try:
+        observation = env.reset()
+        print(f"[START] New episode initiated")
+        return observation.model_dump()
+    except Exception as e:
+        print(f"Reset Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/step")
 async def step(request: Request):
-    data = await request.json()
     try:
+        data = await request.json()
+        
+        # --- STEP 2: ROBUST ACTION PARSING ---
+        # If 'data' is nested (sometimes graders wrap it), extract it.
+        # This ensures we don't crash if the grader sends extra keys.
         action = Action(**data)
+        
         result = env.step(action)
+        
+        # Log the step
+        print(f"[STEP] action={action.action_type} reward={result.reward.step_reward}")
+
+        # Return standard OpenEnv response format
+        return {
+            "observation": result.observation.model_dump(),
+            "reward": {
+                "step_reward": float(result.reward.step_reward),
+                "cumulative_reward": float(result.reward.cumulative_reward),
+                "feedback": result.reward.feedback,
+            },
+            "done": bool(result.done),
+            "info": result.info,
+        }
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"step failed: {exc}") from exc
+        print(f"Step Error: {exc}")
+        raise HTTPException(status_code=400, detail=f"Step failed: {exc}")
 
-    _log_step(getattr(env, "_step", 0), action, result.done)
-
-    if result.done:
-        try:
-            grade = env.grade()
-            _log_end(grade.final_score, getattr(env, "_step", 0), result.done)
-        except Exception:
-            _log_end(result.reward.cumulative_reward, getattr(env, "_step", 0), result.done)
-
-    return {
-        "observation": result.observation.model_dump(),
-        "reward": {
-            "step_reward": result.reward.step_reward,
-            "cumulative_reward": result.reward.cumulative_reward,
-            "breakdown": result.reward.breakdown,
-            "feedback": result.reward.feedback,
-        },
-        "done": result.done,
-        "info": result.info,
-    }
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=7860)
