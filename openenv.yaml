@@ -1,15 +1,13 @@
 name: medical-triage-v1
 version: "1.0.0"
 description: >
-  A real-world emergency department triage simulation where an AI agent
-  acts as a triage nurse. Uses the Emergency Severity Index (ESI) standard.
-  Agent must assess patients, assign ESI levels 1-5, route to care zones,
-  request clinical resources, and escalate life-threatening cases under
-  time pressure with patient deterioration mechanics.
-
+  A medical triage environment using the Emergency Severity Index (ESI) standard.
+  Agent must assess patient vitals, complaints, and history to assign ESI levels
+  and manage emergency department resources under surge conditions.
 author: "TriageNet-RL Team"
 license: MIT
-tags: [medical, triage, healthcare, real-world, multi-task, partial-rewards]
+tags: [medical, triage, healthcare, RL, LLM-native, OpenEnv]
+entry_file: inference.py
 
 environment:
   type: sequential
@@ -20,17 +18,17 @@ environment:
 
 tasks:
   - id: 1
-    name: "Single Patient ESI Classification"
+    name: "Easy: Single Patient ESI"
     difficulty: easy
     max_steps: 5
     pass_threshold: 0.60
   - id: 2
-    name: "Multi-Patient Prioritization Queue"
+    name: "Medium: Multi-Patient Queue"
     difficulty: medium
     max_steps: 20
     pass_threshold: 0.65
   - id: 3
-    name: "Full ED Surge Management"
+    name: "Hard: Mass Casualty Surge"
     difficulty: hard
     max_steps: 40
     pass_threshold: 0.55
@@ -55,47 +53,31 @@ action_space:
   fields:
     action_type:
       type: enum
-      values: [assign_esi, request_resources, escalate, reassess, discharge, wait]
+      values: [assign_esi, request_resources, wait]
     patient_id: {type: string, required: true}
     esi_level: {type: integer, range: [1,5], required_for: [assign_esi]}
     routing_zone:
       type: enum
       values: [resuscitation_bay, acute_care, fast_track, waiting_room]
       required_for: [assign_esi]
-    resources:
-      type: list[string]
-      options: [ecg, iv_access, blood_panel, chest_xray, ct_head]
-    notes: {type: string, optional: true}
 
 reward_structure:
   dense: true
   range: [-1.0, 1.0]
   components:
-    esi_exact: +0.30
-    esi_off_by_one: +0.10
-    esi_wrong: -0.10
-    critical_miss_penalty: -0.50
-    routing_correct: +0.20
-    routing_partial: +0.05
-    routing_wrong_tier: -0.15
-    resource_good: +0.15
-    escalate_correct: +0.25
-    escalate_unneeded: -0.10
-    reassess_useful: +0.10
+    esi_correct: +0.10
+    resource_waste: -0.05
     wait_penalty: -0.08
-    duplicate_action: -0.20
-    patient_deterioration: -0.35
-    discharge_correct: +0.10
-    discharge_critical: -0.40
+    critical_miss: -0.50
+    deterioration: -0.35
 
 baseline_scores:
-  agent: rule-based-heuristics
+  agent: random
   seed: 42
-  task1: 0.68
-  task2: 0.61
-  task3: 0.52
-  average: 0.60
+  task1: 0.1
+  task2: 0.05
+  task3: 0.02
 
 dependencies:
   python: ">=3.9"
-  packages: [pyyaml>=6.0, gradio>=4.0, openai>=1.0, huggingface_hub>=0.20.0,<1.0]
+  packages: [openai, pydantic, pyyaml]

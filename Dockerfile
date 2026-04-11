@@ -1,26 +1,34 @@
+# Use lightweight slim image
 FROM python:3.11-slim
 
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HF_HOME=/tmp/huggingface
+
+# Set working directory
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    build-essential curl \
-    && rm -rf /var/lib/apt/lists/*
+# Install only essential lightweight dependencies
+# Keeping it minimal for 2 vCPU / 8 GB RAM limits
+RUN pip install --no-cache-dir \
+    openai \
+    pydantic \
+    pyyaml
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy project files
+# We only need the core logic and inference script
+COPY env.py .
+COPY schemas.py .
+COPY tasks.py .
+COPY models.py .
+COPY inference.py .
+COPY openenv.yaml .
 
-COPY . .
-
-RUN useradd -m -u 1000 appuser \
-    && chown -R appuser:appuser /app
+# Create a non-root user for security (required by many HF evaluators)
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
 USER appuser
 
-EXPOSE 7860
-
-ENV PYTHONUNBUFFERED=1
-ENV PORT=7860
-
-HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:7860/health || exit 1
-
-CMD ["python", "app.py"]
+# Entry point directly executes the inference script
+CMD ["python", "inference.py"]

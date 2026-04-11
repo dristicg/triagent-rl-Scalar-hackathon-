@@ -7,7 +7,7 @@ Each task has a deterministic grader returning score 0.0–1.0.
 from __future__ import annotations
 import copy
 from typing import Any, Dict, List, Tuple
-from models import Patient, Vitals
+from schemas import InternalPatient as Patient, Vitals
 
 
 def _p(pid, name, age, gender, complaint, vitals_dict, history, meds, arrival, esi, routing):
