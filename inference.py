@@ -4,19 +4,68 @@ import traceback
 from typing import List, Optional
 from openai import OpenAI
 from env import MedicalTriageEnv
-from schemas import TriageAction as Action
+from schemas import TriageAction
 
 # ── Environment Configuration ──
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
-if not HF_TOKEN:
-    print("⚠️ WARNING: HF_TOKEN not set. LLM calls will fail. Using placeholder for local testing.")
-    HF_TOKEN = "sk-placeholder"
+# The API key for LLM calls is always HF_TOKEN
+# routed through API_BASE_URL (HuggingFace router)
+API_KEY = HF_TOKEN
 
-# Initialize OpenAI Client
-client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+TASK_NAMES = {1: "Easy", 2: "Medium", 3: "Hard"}
+
+def get_client():
+    """
+    Create OpenAI client pointed at HuggingFace router.
+    Always uses API_BASE_URL as base, HF_TOKEN as key.
+    Never points directly at api.openai.com.
+    """
+    if not HF_TOKEN:
+        return None
+    return OpenAI(
+        base_url=API_BASE_URL,
+        api_key=HF_TOKEN,
+    )
+
+def get_fallback_action(obs_dict: dict, patient_id: str):
+    """
+    Rule-based fallback when LLM API is unavailable.
+    Uses vitals to make a reasonable triage decision.
+    Much better than action=wait which scores -0.08 every step.
+    """
+    from models import Action
+    patient = obs_dict.get("current_patient") or {}
+    vitals  = patient.get("vitals", {})
+
+    gcs    = vitals.get("gcs", 15)
+    spo2   = vitals.get("spo2", 98)
+    hr     = vitals.get("heart_rate", 80)
+    bp_sys = vitals.get("bp_systolic", 120)
+    pain   = vitals.get("pain_scale", 0)
+
+    # ESI classification from vitals
+    if gcs <= 8 or spo2 < 85 or bp_sys < 80 or hr == 0:
+        esi, zone = 1, "resuscitation_bay"
+    elif spo2 < 92 or hr > 120 or bp_sys > 180 or pain >= 9:
+        esi, zone = 2, "acute_care"
+    elif pain >= 5 or hr > 100 or bp_sys > 150:
+        esi, zone = 3, "fast_track"
+    elif pain >= 2:
+        esi, zone = 4, "waiting_room"
+    else:
+        esi, zone = 5, "waiting_room"
+
+    return Action(
+        action_type="assign_esi",
+        patient_id=patient_id,
+        esi_level=esi,
+        routing_zone=zone,
+        notes="Fallback: vitals-based classification",
+    )
 
 SYSTEM_PROMPT = """You are an expert ER triage nurse managing a highly constrained environment.
 
@@ -38,14 +87,16 @@ The output must be EXACTLY this JSON format:
 ESI Levels: 1 (Immediate), 2 (Emergent), 3 (Urgent), 4 (Less Urgent), 5 (Non-Urgent).
 Routing Zones: resuscitation_bay, acute_care, fast_track, waiting_room."""
 
-def run_episode(env: MedicalTriageEnv, task_name: str):
+def run_episode(env: MedicalTriageEnv, task_id: int):
     """Runs a single episode loop against the environment."""
-    print(f"[START] task={task_name} env=MedicalTriage model={MODEL_NAME}")
+    task_name = TASK_NAMES.get(task_id, "Unknown")
+    print(f"[START] task={task_name} env=MedicalTriage model={MODEL_NAME}", flush=True)
     
     obs = env.reset()
     step_idx = 0
     done = False
     reward_history = []
+    client = get_client()
     
     while not done:
         step_idx += 1
@@ -56,11 +107,14 @@ def run_episode(env: MedicalTriageEnv, task_name: str):
             break
             
         current_patient_id = pending_patients[0]
-        error_msg = "null"
+        error_msg = ""
         action_str = "wait"
         reward_score = 0.0
         
         try:
+            if not client:
+                raise ValueError("No HF_TOKEN provided")
+                
             # LLM Inference
             completion = client.chat.completions.create(
                 model=MODEL_NAME,
@@ -78,47 +132,48 @@ def run_episode(env: MedicalTriageEnv, task_name: str):
             llm_dict["patient_id"] = current_patient_id
             
             # Create Action model
+            from models import Action
             action = Action(**llm_dict)
-            action_str = f"{action.action_type}({action.esi_level or ''})"
+            action_str = f"{action.action_type}"
             
             # Environment Step
             obs, reward, done, info = env.step(action)
             reward_score = reward.score
             
         except Exception as e:
-            # Sanitize error message (no newlines)
             error_msg = str(e).replace("\n", " ")
             # Fallback action
-            fallback_action = Action(action_type="wait", patient_id=current_patient_id)
+            action = get_fallback_action(obs_dict, current_patient_id)
+            action_str = action.action_type
+            
             try:
-                obs, reward, done, info = env.step(fallback_action)
+                obs, reward, done, info = env.step(action)
                 reward_score = reward.score
-                action_str = "wait"
             except:
                 done = True
         
         reward_history.append(reward_score)
         
         # [STEP] log
-        print(f"[STEP] step={step_idx} action={action_str} reward={reward_score:.2f} done={str(done).lower()} error={error_msg}")
+        print(f"[STEP] step={step_idx} action={action_str} reward={reward_score:.2f} done={str(done).lower()} error={error_msg}", flush=True)
 
     # [END] log
     rewards_str = ",".join([f"{r:.2f}" for r in reward_history])
-    success = "true" if env._score > 0 else "false" # Simple success metric or use env.grade()
-    print(f"[END] success={success} steps={step_idx} rewards={rewards_str}")
+    
+    # success=true only if final_score > pass_threshold
+    try:
+        grade = env.grade()
+        success = "true" if grade.passed else "false"
+    except Exception as e:
+        success = "false"
+    
+    print(f"[END] success={success} steps={step_idx} rewards={rewards_str}", flush=True)
 
 
 if __name__ == "__main__":
-    tasks = [
-        (1, "Easy"),
-        (2, "Medium"),
-        (3, "Hard")
-    ]
-    
-    for task_id, task_name in tasks:
+    for task_id in [1, 2, 3]:
         try:
             env = MedicalTriageEnv(task_id=task_id)
-            run_episode(env, task_name)
+            run_episode(env, task_id)
         except Exception as e:
-            # Fatal environment error
             pass
