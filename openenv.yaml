@@ -65,11 +65,11 @@ reward_structure:
   dense: true
   range: [-1.0, 1.0]
   components:
-    esi_correct: +0.10
-    resource_waste: -0.05
-    wait_penalty: -0.08
-    critical_miss: -0.50
-    deterioration: -0.35
+    esi_correct: +0.50
+    resource_waste: -0.10
+    wait_penalty: -0.05
+    critical_miss: -1.00
+    deterioration: -0.40
 
 baseline_scores:
   agent: random

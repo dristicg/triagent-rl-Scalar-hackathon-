@@ -7,12 +7,12 @@ from schemas import Observation, TriageAction as Action, Reward, PatientInfo, Be
 from tasks import ALL_PATIENTS
 
 # Reward Constants (Aligned with tasks.py weights)
-R_ESI_CORRECT = 0.10
-R_RESOURCE_WASTE = -0.02
-R_WAIT_PENALTY = -0.01
-R_CRITICAL_MISS = -0.20
-R_DETERIORATION = -0.08
-R_DUPLICATE_ACTION = -0.10
+R_ESI_CORRECT = 0.50
+R_RESOURCE_WASTE = -0.05
+R_WAIT_PENALTY = -0.05
+R_CRITICAL_MISS = -1.00
+R_DETERIORATION = -0.40
+R_DUPLICATE_ACTION = -0.50
 
 class MedicalTriageEnv:
     """

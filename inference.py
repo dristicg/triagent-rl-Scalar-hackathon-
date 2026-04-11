@@ -47,10 +47,10 @@ def get_fallback_action(obs_dict: dict, patient_id: str):
     bp_sys = vitals.get("bp_systolic", 120)
     pain   = vitals.get("pain_scale", 0)
 
-    # ESI classification from vitals
-    if gcs <= 8 or spo2 < 85 or bp_sys < 80 or hr == 0:
+    # ESI classification from vitals (Clinical standard thresholds)
+    if gcs <= 8 or spo2 <= 88 or bp_sys < 90 or hr == 0:
         esi, zone = 1, "resuscitation_bay"
-    elif spo2 < 92 or hr > 120 or bp_sys > 180 or pain >= 9:
+    elif spo2 < 94 or hr > 110 or bp_sys > 180 or pain >= 9:
         esi, zone = 2, "acute_care"
     elif pain >= 5 or hr > 100 or bp_sys > 150:
         esi, zone = 3, "fast_track"
@@ -67,25 +67,42 @@ def get_fallback_action(obs_dict: dict, patient_id: str):
         notes="Fallback: vitals-based classification",
     )
 
-SYSTEM_PROMPT = """You are an expert ER triage nurse managing a highly constrained environment.
+# Track last action per patient to prevent loops
+_last_action_per_patient = {}
 
-SOP 1: Identify critical patients immediately. If a patient's vitals indicate deterioration (e.g., severe pain, low SpO2, unresponsiveness), assign ESI Level 1 or 2 immediately.
-SOP 2: Do not use the 'wait' action if there are untriaged patients or if you have pending resources you can allocate.
-SOP 3: Manage beds carefully. Do not route stable patients to the resuscitation_bay.
-SOP 4: You MUST fill out the reasoning field in your JSON response first, explaining your logic step-by-step, before outputting the final action.
+def get_action_with_loop_prevention(obs_dict, patient_id, llm_action):
+    """Prevent the LLM from looping on the same action."""
+    last = _last_action_per_patient.get(patient_id)
+    
+    # If same action repeated — force assign_esi instead
+    if last == llm_action.action_type and llm_action.action_type != "assign_esi":
+        return get_fallback_action(obs_dict, patient_id)
+    
+    _last_action_per_patient[patient_id] = llm_action.action_type
+    return llm_action
 
-Valid action types: "assign_esi", "request_resources", "wait".
-The output must be EXACTLY this JSON format:
+SYSTEM_PROMPT = """You are an expert ED triage nurse. Your ONLY job is to assign ESI levels to patients.
+
+STRICT RULES:
+1. ALWAYS use action_type "assign_esi" as your FIRST action for any new patient
+2. NEVER use "request_resources" more than once per patient
+3. NEVER repeat the same action twice in a row
+4. Move to the next patient immediately after assigning ESI
+
+ESI CLASSIFICATION:
+- ESI 1 (resuscitation_bay): GCS<=8, SpO2<85%, cardiac arrest, unresponsive, active seizure
+- ESI 2 (acute_care): SpO2<92%, HR>120, chest pain, worst headache, stroke symptoms, severe asthma  
+- ESI 3 (fast_track): Moderate pain 5-8, stable vitals but needs workup, abdominal pain
+- ESI 4 (waiting_room): Minor complaint, mild symptoms, can wait
+- ESI 5 (waiting_room): Non-urgent, prescription refill, minor cut
+
+RESPOND WITH ONLY THIS JSON - NO OTHER TEXT:
 {
-  "reasoning": "Briefly explain your step-by-step clinical logic, time management, and bed availability reasoning before deciding on the action.",
   "action_type": "assign_esi",
-  "patient_id": "P00X",
-  "esi_level": 3,
-  "routing_zone": "acute_care",
-  "notes": "brief clinical notes"
-}
-ESI Levels: 1 (Immediate), 2 (Emergent), 3 (Urgent), 4 (Less Urgent), 5 (Non-Urgent).
-Routing Zones: resuscitation_bay, acute_care, fast_track, waiting_room."""
+  "esi_level": <integer 1-5>,
+  "routing_zone": "<resuscitation_bay|acute_care|fast_track|waiting_room>",
+  "notes": "<one sentence clinical reasoning>"
+}"""
 
 def run_episode(env: MedicalTriageEnv, task_id: int):
     """Runs a single episode loop against the environment."""
@@ -133,7 +150,10 @@ def run_episode(env: MedicalTriageEnv, task_id: int):
             
             # Create Action model
             from models import Action
-            action = Action(**llm_dict)
+            llm_action = Action(**llm_dict)
+            
+            # Loop Prevention
+            action = get_action_with_loop_prevention(obs_dict, current_patient_id, llm_action)
             action_str = f"{action.action_type}"
             
             # Environment Step
@@ -155,10 +175,10 @@ def run_episode(env: MedicalTriageEnv, task_id: int):
         reward_history.append(reward_score)
         
         # [STEP] log
-        print(f"[STEP] step={step_idx} action={action_str} reward={reward_score:.2f} done={str(done).lower()} error={error_msg}", flush=True)
+        print(f"[STEP] step={step_idx} action={action_str} reward={reward_score:.3f} done={str(done).lower()} error={error_msg}", flush=True)
 
     # [END] log
-    rewards_str = ",".join([f"{r:.2f}" for r in reward_history])
+    rewards_str = ",".join([f"{r:g}" for r in reward_history])
     
     # success=true only if final_score > pass_threshold
     try:
