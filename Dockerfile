@@ -24,11 +24,13 @@ COPY tasks.py .
 COPY models.py .
 COPY inference.py .
 COPY openenv.yaml .
+COPY app.py .
 
 # Create a non-root user for security (required by many HF evaluators)
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 USER appuser
 
-# Entry point directly executes the inference script
-CMD ["python", "inference.py"]
+# Keeps the Space awake on Hugging Face
+EXPOSE 7860
+CMD ["python", "app.py"]

@@ -313,7 +313,7 @@ def run_all(seed: int = 42, verbose: bool = True, json_output: bool = False):
         print("BASELINE AGENT RESULTS")
         print(f"{'='*60}")
         print(f"{'Task':<6} {'Difficulty':<10} {'Score':>8} {'Passed':>8}")
-        print(f"{'─'*38}")
+        print(f"{'-'*38}")
         
         total_score = 0.0
         for tid, result in results.items():
@@ -322,7 +322,7 @@ def run_all(seed: int = 42, verbose: bool = True, json_output: bool = False):
             print(f"Task {tid}  {difficulty:<10} {result['final_score']:>7.3f}  {passed}")
             total_score += result["final_score"]
         
-        print(f"{'─'*38}")
+        print(f"{'-'*38}")
         print(f"{'AVERAGE':<16} {total_score/3:>7.3f}")
         print(f"{'='*60}")
     

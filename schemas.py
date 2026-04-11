@@ -42,7 +42,9 @@ class InternalPatient(PatientInfo):
     true_routing: str
     assigned_esi: Optional[int] = None
     assigned_zone: Optional[str] = None
+    assigned_routing: Optional[str] = None # Added for tasks.py grader
     resources: List[str] = []
+    resources_requested: List[str] = [] # Added for tasks.py grader
     discharged: bool = False
 
 
