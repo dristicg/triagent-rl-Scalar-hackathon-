@@ -14,7 +14,10 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
     openai \
     pydantic \
-    pyyaml
+    pyyaml \
+    fastapi \
+    gradio \
+    uvicorn
 
 # Copy project files
 # We only need the core logic and inference script
@@ -25,6 +28,7 @@ COPY models.py .
 COPY inference.py .
 COPY openenv.yaml .
 COPY app.py .
+COPY server/ server/
 
 # Create a non-root user for security (required by many HF evaluators)
 RUN useradd -m -u 1000 appuser && \

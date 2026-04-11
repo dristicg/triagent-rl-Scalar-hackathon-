@@ -1,20 +1,11 @@
-import http.server
-import socketserver
 import os
+import sys
 
-# Port 7860 is the default for Hugging Face Spaces
-PORT = 7860
+# Ensure the root directory is in the python path
+# This allows server/app.py to import env.py, models.py, etc. from the parent directory
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-Handler = http.server.SimpleHTTPRequestHandler
-
-def main():
-    print(f"Keeping Space awake on port {PORT}...")
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nShutting down server.")
-            httpd.shutdown()
+from server.app import main
 
 if __name__ == "__main__":
     main()
